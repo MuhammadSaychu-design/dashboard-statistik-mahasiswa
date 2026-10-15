@@ -584,27 +584,28 @@ with tab3:
                 f"- Selang kepercayaan 95% untuk kemiringan: [{fm(ci[0])}; {fm(ci[1])}]\n"
                 f"- Galat baku residual (s): {fm(s_e)} satuan Y")
 
-        # grafik dengan pita prediksi
-        gx = np.linspace(X.min(), X.max(), 60)
-        gy = a + b * gx
-        h = 1 / n + (gx - X.mean()) ** 2 / sxx
-        grid = pd.DataFrame({"x": gx, "y": gy,
-                             "pl": gy - tcrit * s_e * np.sqrt(1 + h), "ph": gy + tcrit * s_e * np.sqrt(1 + h),
-                             "cl": gy - tcrit * s_e * np.sqrt(h), "ch": gy + tcrit * s_e * np.sqrt(h)})
-        band_p = alt.Chart(grid).mark_area(opacity=.12, color=col, clip=True).encode(x="x:Q", y="pl:Q", y2="ph:Q")
-        band_c = alt.Chart(grid).mark_area(opacity=.25, color=col, clip=True).encode(x="x:Q", y="cl:Q", y2="ch:Q")
-        line = alt.Chart(grid).mark_line(color=col, strokeWidth=3, clip=True).encode(x=alt.X("x:Q", title=L(xv)), y=alt.Y("y:Q", title=L(yv), scale=alt.Scale(zero=False)))
-        pc = alt.Color("Gender:N", scale=GCOL) if has_g else alt.value("#3b4a6b")
-        pts = alt.Chart(sub).mark_circle(size=60, opacity=.75, clip=True).encode(
-            x=alt.X(f"{xv}:Q", scale=alt.Scale(zero=False)), y=alt.Y(f"{yv}:Q", scale=alt.Scale(zero=False)), color=pc,
-            tooltip=[xv, yv] + (["Gender"] if has_g else []))
-        st.altair_chart((band_p + band_c + line + pts).properties(height=380).interactive(), width="stretch")
-        st.caption("Seret untuk menggeser, scroll untuk zoom, klik dua kali untuk reset. Garis = regresi. Pita pekat = selang kepercayaan 95% rata-rata Y. Pita tipis = selang prediksi 95% untuk satu mahasiswa baru.")
-
-        st.markdown("#### Seret titik, lihat korelasinya berubah")
+        st.markdown("#### Grafik yang bisa digeser: seret titik biru, garis ikut bergeser")
         st.caption("Titik yang digeser langsung mengubah datanya, sehingga tabel, grafik lain, prediksi, dan keputusan ikut dihitung ulang.")
         res = drag_scatter(sub, orig_df, xv, yv)
         apply_moves(df, getattr(res, "moved", None), xv, yv)
+
+        # grafik dengan pita prediksi (hanya zoom/geser tampilan)
+        with st.expander("Grafik dengan pita prediksi (hanya bisa di-zoom, titiknya tidak bisa digeser)"):
+            gx = np.linspace(X.min(), X.max(), 60)
+            gy = a + b * gx
+            h = 1 / n + (gx - X.mean()) ** 2 / sxx
+            grid = pd.DataFrame({"x": gx, "y": gy,
+                                 "pl": gy - tcrit * s_e * np.sqrt(1 + h), "ph": gy + tcrit * s_e * np.sqrt(1 + h),
+                                 "cl": gy - tcrit * s_e * np.sqrt(h), "ch": gy + tcrit * s_e * np.sqrt(h)})
+            band_p = alt.Chart(grid).mark_area(opacity=.12, color=col, clip=True).encode(x="x:Q", y="pl:Q", y2="ph:Q")
+            band_c = alt.Chart(grid).mark_area(opacity=.25, color=col, clip=True).encode(x="x:Q", y="cl:Q", y2="ch:Q")
+            line = alt.Chart(grid).mark_line(color=col, strokeWidth=3, clip=True).encode(x=alt.X("x:Q", title=L(xv)), y=alt.Y("y:Q", title=L(yv), scale=alt.Scale(zero=False)))
+            pc = alt.Color("Gender:N", scale=GCOL) if has_g else alt.value("#3b4a6b")
+            pts = alt.Chart(sub).mark_circle(size=60, opacity=.75, clip=True).encode(
+                x=alt.X(f"{xv}:Q", scale=alt.Scale(zero=False)), y=alt.Y(f"{yv}:Q", scale=alt.Scale(zero=False)), color=pc,
+                tooltip=[xv, yv] + (["Gender"] if has_g else []))
+            st.altair_chart((band_p + band_c + line + pts).properties(height=380).interactive(), width="stretch")
+            st.caption("Seret untuk menggeser, scroll untuk zoom, klik dua kali untuk reset. Garis = regresi. Pita pekat = selang kepercayaan 95% rata-rata Y. Pita tipis = selang prediksi 95% untuk satu mahasiswa baru.")
 
         # prediksi
         st.markdown("#### Prediksi")
