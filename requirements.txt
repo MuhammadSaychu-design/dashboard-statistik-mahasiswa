@@ -1,5 +1,5 @@
-scipy
-pandas
-matplotlib
-seaborn
-streamlit
+streamlit>=1.60
+pandas>=2.0
+numpy>=1.26
+scipy>=1.11
+altair>=5

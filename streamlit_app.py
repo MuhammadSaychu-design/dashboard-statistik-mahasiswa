@@ -3,14 +3,12 @@
 Jalankan:  streamlit run streamlit_app.py
 Data bawaan: data/latihan1.csv (bisa diganti lewat unggah CSV di sidebar).
 """
-import json
 from pathlib import Path
 
 import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from scipy import stats
 
 DATA = Path(__file__).parent / "data" / "latihan1.csv"
@@ -37,13 +35,51 @@ def fm(v, d=2):
     return f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-DRAG_HTML = r"""<!doctype html>
-<html lang="id"><head><meta charset="utf-8">
-<style>
-:root{--ink:#172033;--muted:#5b6577;--line:#d5dbe4;--pos:#2f5da8;--f:#0c8f8f;--m:#d9772b;--neg:#b8442b;--soft:rgba(127,127,127,.07)}
-body.dark{--ink:#e6eaf2;--muted:#9aa5b8;--line:#2b374d;--pos:#6f9bea;--f:#3cc0b8;--m:#f0a15a;--neg:#e5836b}
-*{box-sizing:border-box}
-body{margin:0;padding:2px;font:14px/1.45 "Source Sans Pro","Segoe UI",system-ui,sans-serif;color:var(--ink);background:transparent;font-variant-numeric:tabular-nums}
+DRAG_HTML = r"""<div class="app">
+<div class="bar" id="bar" role="status">
+  <span class="badge ok" id="badge"></span>
+  <span class="msg" id="msg"></span>
+  <button type="button" id="reset">Kembalikan titik ke data awal</button>
+</div>
+
+<div class="wrap">
+  <div>
+    <svg id="svg" viewBox="0 0 640 460" role="group" aria-label="Diagram sebar yang bisa digeser"></svg>
+    <div class="legend">
+      <span><i class="dot"></i>Satu titik = satu mahasiswa</span>
+      <span><i class="dash"></i>Rata-rata X dan Y</span>
+      <span><i style="background:var(--f);opacity:.55"></i>Kotak searah (+)</span>
+      <span><i style="background:var(--m);opacity:.65"></i>Kotak berlawanan (−)</span>
+    </div>
+    <label class="hint" style="display:block"><input type="checkbox" id="boxes"> Tampilkan kotak searah/berlawanan untuk tiap titik</label>
+    <p class="hint">Seret titik di grafik, atau fokuskan titik lalu pakai tombol panah (Shift = langkah besar), untuk mengubah nilainya.</p>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h4>Korelasi (r)</h4>
+      <div class="rbig" id="rBig">–</div>
+      <div class="gauge"><span id="gMark"></span></div>
+      <div class="gl"><span>−1</span><span>0</span><span>+1</span></div>
+      <p class="read" id="rText"></p>
+      <dl id="stats"></dl>
+      <div class="pred-box">
+        <label><span id="predLbl"></span>
+          <input type="range" id="predX" aria-label="Nilai X untuk perkiraan"></label>
+        <p class="read" id="predOut"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+"""
+
+DRAG_CSS = r"""
+.app{--ink:#172033;--muted:#5b6577;--line:#d5dbe4;--pos:#2f5da8;--f:#0c8f8f;--m:#d9772b;--neg:#b8442b;--soft:rgba(127,127,127,.07)}
+.app.dark{--ink:#e6eaf2;--muted:#9aa5b8;--line:#2b374d;--pos:#6f9bea;--f:#3cc0b8;--m:#f0a15a;--neg:#e5836b}
+.app,.app *{box-sizing:border-box}
+.app{margin:0;padding:2px;font:inherit;font-size:14px;line-height:1.45;color:var(--ink);background:transparent;font-variant-numeric:tabular-nums}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin-bottom:12px;background:var(--soft)}
 .bar.dirty{border-color:var(--m)}
 .badge{border-radius:99px;padding:2px 12px;font-size:.82rem;white-space:nowrap}
@@ -92,64 +128,36 @@ dd{margin:0;font-weight:600}
 .pred-box label{display:grid;gap:6px;font-size:.9rem}
 .pred-box input{width:100%;accent-color:var(--pos)}
 .warn-t{color:var(--m)}
-</style></head>
-<body>
-<script id="cfg" type="application/json">__CFG__</script>
+"""
 
-<div class="bar" id="bar" role="status">
-  <span class="badge ok" id="badge"></span>
-  <span class="msg" id="msg"></span>
-  <button type="button" id="reset">Kembalikan data awal</button>
-  <button type="button" id="dl">Unduh CSV</button>
-</div>
+DRAG_JS = r"""export default function (component) {
+  var app = component.parentElement.querySelector('.app');
+  if (!app) return;
+  if (!app.__w) app.__w = create(app);
+  app.__w.update(component.data, component.setTriggerValue);
+}
 
-<div class="wrap">
-  <div>
-    <svg id="svg" viewBox="0 0 640 460" role="group" aria-label="Diagram sebar yang bisa digeser"></svg>
-    <div class="legend">
-      <span><i class="dot"></i>Satu titik = satu mahasiswa</span>
-      <span><i class="dash"></i>Rata-rata X dan Y</span>
-      <span><i style="background:var(--f);opacity:.55"></i>Kotak searah (+)</span>
-      <span><i style="background:var(--m);opacity:.65"></i>Kotak berlawanan (−)</span>
-    </div>
-    <label class="hint" style="display:block"><input type="checkbox" id="boxes"> Tampilkan kotak searah/berlawanan untuk tiap titik</label>
-    <p class="hint">Seret titik di grafik, atau fokuskan titik lalu pakai tombol panah (Shift = langkah besar), untuk mengubah nilainya.</p>
-  </div>
-
-  <div>
-    <div class="panel">
-      <h4>Korelasi (r)</h4>
-      <div class="rbig" id="rBig">–</div>
-      <div class="gauge"><span id="gMark"></span></div>
-      <div class="gl"><span>−1</span><span>0</span><span>+1</span></div>
-      <p class="read" id="rText"></p>
-      <dl id="stats"></dl>
-      <div class="pred-box">
-        <label><span id="predLbl"></span>
-          <input type="range" id="predX" aria-label="Nilai X untuk perkiraan"></label>
-        <p class="read" id="predOut"></p>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function () {
-  var cfg = JSON.parse(document.getElementById('cfg').textContent);
-  if (cfg.theme === 'dark') document.body.classList.add('dark');
-  var orig = cfg.rows.map(function (r) { return { id: r.id, g: r.g, x: r.x, y: r.y }; });
-  var pts = orig.map(function (r) { return { id: r.id, g: r.g, x: r.x, y: r.y }; });
-  var n = pts.length, XL = cfg.xl, YL = cfg.yl;
-
+function create(app) {
+  function $(id) { return app.querySelector('#' + id); }
   var W = 640, H = 460, M = { l: 58, r: 20, t: 30, b: 50 };
   var PW = W - M.l - M.r, PH = H - M.t - M.b;
-  var svg = document.getElementById('svg');
+  var svg = $('svg');
+  var send = function () {};
+  var XL = '', YL = '', curKey = null;
+  var rows = [], orig = [], pts = [], n = 0;
+  var AX, AY, dX = 0, dY = 0, x0 = 0, showBoxes = true;
+  var drag = null, timer = null;
 
   function fm(v, d) {
     if (d === undefined) d = 2;
     if (v === null || v === undefined || !isFinite(v)) return '–';
     return v.toLocaleString('id-ID', { minimumFractionDigits: d, maximumFractionDigits: d });
   }
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function r2(v) { return Math.round(v * 100) / 100; }
+  function dec(step) { return step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(step))); }
+
   function niceAxis(lo, hi) {
     if (hi - lo === 0) { lo -= 1; hi += 1; }
     var raw = (hi - lo) / 6, mag = Math.pow(10, Math.floor(Math.log10(raw))), nr = raw / mag;
@@ -159,20 +167,28 @@ dd{margin:0;font-weight:600}
     for (var v = a; v <= b + step / 2; v += step) t.push(Math.round(v / step) * step);
     return { lo: a, hi: b, ticks: t, step: step };
   }
-  function span(key) {
-    var v = orig.map(function (p) { return p[key]; });
-    var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v), pad = (hi - lo) * 0.08 || 1;
-    return { lo: lo, hi: hi, nice: niceAxis(lo - pad, hi + pad) };
+  function rangeOf(key) {
+    var lo = Infinity, hi = -Infinity;
+    [rows, orig].forEach(function (arr) {
+      arr.forEach(function (p) { if (p[key] < lo) lo = p[key]; if (p[key] > hi) hi = p[key]; });
+    });
+    var pad = (hi - lo) * 0.08 || 1;
+    return niceAxis(lo - pad, hi + pad);
   }
-  var SX = span('x'), SY = span('y');
-  var AX = SX.nice, AY = SY.nice;
-  function dec(step) { return step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(step))); }
-  var dX = dec(AX.step), dY = dec(AY.step);
+  function setDomain() {
+    AX = rangeOf('x'); AY = rangeOf('y');
+    dX = dec(AX.step); dY = dec(AY.step);
+    var px = $('predX');
+    px.min = AX.lo; px.max = AX.hi; px.step = (AX.hi - AX.lo) / 200;
+  }
+  function outside() {
+    var out = false;
+    rows.forEach(function (p) { if (p.x < AX.lo || p.x > AX.hi || p.y < AY.lo || p.y > AY.hi) out = true; });
+    return out;
+  }
 
   function sx(x) { return M.l + (x - AX.lo) / (AX.hi - AX.lo) * PW; }
   function sy(y) { return M.t + PH - (y - AY.lo) / (AY.hi - AY.lo) * PH; }
-  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
-  function r2(v) { return Math.round(v * 100) / 100; }
 
   function calc() {
     var mx = 0, my = 0, i;
@@ -185,13 +201,8 @@ dd{margin:0;font-weight:600}
     }
     var b = sxx > 0 ? sxy / sxx : NaN;
     var r = (sxx > 0 && syy > 0) ? sxy / Math.sqrt(sxx * syy) : NaN;
-    return { mx: mx, my: my, sxx: sxx, syy: syy, sxy: sxy, b: b, a: my - b * mx, r: r, cov: n > 1 ? sxy / (n - 1) : NaN };
+    return { mx: mx, my: my, b: b, a: my - b * mx, r: r, cov: n > 1 ? sxy / (n - 1) : NaN };
   }
-
-  var showBoxes = n <= 30;
-  document.getElementById('boxes').checked = showBoxes;
-  var x0 = r2((SX.lo + SX.hi) / 2);
-  var drag = null;
 
   function render() {
     var S = calc(), h = '', i;
@@ -248,42 +259,58 @@ dd{margin:0;font-weight:600}
     panel(S);
   }
 
-  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
-
   function strength(a) { return a >= .8 ? 'sangat kuat' : a >= .6 ? 'kuat' : a >= .4 ? 'sedang' : a >= .2 ? 'lemah' : 'sangat lemah'; }
+
+  function changedFromOrig() {
+    var k = 0;
+    for (var i = 0; i < n; i++) if (pts[i].x !== orig[i].x || pts[i].y !== orig[i].y) k++;
+    return k;
+  }
 
   function panel(S) {
     var r = S.r;
-    document.getElementById('rBig').textContent = fm(r);
-    document.getElementById('gMark').style.left = (isFinite(r) ? (r + 1) / 2 * 100 : 50) + '%';
+    $('rBig').textContent = fm(r);
+    $('gMark').style.left = (isFinite(r) ? (r + 1) / 2 * 100 : 50) + '%';
     var t;
     if (!isFinite(r)) t = 'Belum bisa dihitung: semua nilai X atau semua nilai Y sama.';
     else if (Math.abs(r) < .2) t = 'Hampir tidak ada hubungan garis lurus antara X dan Y.';
     else t = 'Hubungan ' + strength(Math.abs(r)) + ' dan ' + (r > 0 ? 'naik' : 'turun') + ': ' +
              (r > 0 ? 'X yang lebih besar cenderung bersama Y yang lebih besar.' : 'X yang lebih besar cenderung bersama Y yang lebih kecil.') +
              ' Sekitar ' + Math.round(r * r * 100) + '% variasi Y ikut dijelaskan X.';
-    document.getElementById('rText').textContent = t;
+    $('rText').textContent = t;
     var items = [['Jumlah titik (n)', String(n)], ['r²', fm(r * r)], ['Rata-rata X', fm(S.mx)], ['Rata-rata Y', fm(S.my)],
                  ['Kemiringan (b)', fm(S.b)], ['Intersep (a)', fm(S.a)], ['Kovarians', fm(S.cov)]];
-    document.getElementById('stats').innerHTML = items.map(function (it) { return '<div><dt>' + it[0] + '</dt><dd>' + it[1] + '</dd></div>'; }).join('');
-    document.getElementById('predLbl').innerHTML = 'Perkiraan ' + esc(YL.toLowerCase()) + ' untuk X = <b>' + fm(x0, dX) + '</b>';
+    $('stats').innerHTML = items.map(function (it) { return '<div><dt>' + it[0] + '</dt><dd>' + it[1] + '</dd></div>'; }).join('');
+    $('predLbl').innerHTML = 'Perkiraan ' + esc(YL.toLowerCase()) + ' untuk X = <b>' + fm(x0, dX) + '</b>';
     var y0 = S.a + S.b * x0, out = '';
     if (isFinite(y0)) {
       out = esc(YL) + ' diperkirakan <b>' + fm(y0, 1) + '</b>.';
-      if (x0 < SX.lo || x0 > SX.hi) out += ' <span class="warn-t">X di luar rentang data awal, ini ekstrapolasi.</span>';
+      if (x0 < AX.lo || x0 > AX.hi) out += ' <span class="warn-t">X di luar rentang grafik, ini ekstrapolasi.</span>';
     }
-    document.getElementById('predOut').innerHTML = out;
+    $('predOut').innerHTML = out;
 
-    var k = 0;
-    for (var i = 0; i < n; i++) if (pts[i].x !== orig[i].x || pts[i].y !== orig[i].y) k++;
-    var bar = document.getElementById('bar'), badge = document.getElementById('badge');
-    bar.classList.toggle('dirty', k > 0);
+    var k = changedFromOrig();
+    $('bar').classList.toggle('dirty', k > 0);
+    var badge = $('badge');
     badge.className = 'badge ' + (k > 0 ? 'warn' : 'ok');
     badge.textContent = k > 0 ? '● Data diubah' : '● Sama dengan data awal';
-    document.getElementById('msg').textContent = k > 0
-      ? k + ' titik berbeda dari data awal. Hitungan memakai data terbaru; data di server tidak berubah.'
-      : 'Ubah posisi titik untuk melihat r, garis regresi, dan kotak searah berubah.';
-    document.getElementById('reset').disabled = k === 0;
+    $('msg').textContent = k > 0
+      ? k + ' titik berbeda dari data awal. Perubahan ini ikut mengubah seluruh dashboard.'
+      : 'Seret titik, atau pakai tombol panah, untuk mengubah data. Seluruh dashboard ikut dihitung ulang.';
+    $('reset').disabled = k === 0;
+  }
+
+  function diff() {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      if (pts[i].x !== rows[i].x || pts[i].y !== rows[i].y) out.push({ i: pts[i].i, x: pts[i].x, y: pts[i].y });
+    }
+    return out;
+  }
+  function sendNow() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    var d = diff();
+    if (d.length) send('moved', { points: d, t: Date.now() });
   }
 
   function toData(e) {
@@ -309,7 +336,7 @@ dd{margin:0;font-weight:600}
     pts[drag].x = p.x; pts[drag].y = p.y;
     render();
   });
-  function endDrag() { if (drag !== null) { drag = null; render(); } }
+  function endDrag() { if (drag !== null) { drag = null; render(); sendNow(); } }
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
@@ -328,50 +355,84 @@ dd{margin:0;font-weight:600}
     render();
     var el = svg.querySelector('[data-i="' + i + '"]');
     if (el && el.focus) el.focus({ preventScroll: true });
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(sendNow, 450);
   });
 
-  var predX = document.getElementById('predX');
-  predX.min = AX.lo; predX.max = AX.hi; predX.step = (AX.hi - AX.lo) / 200; predX.value = x0;
-  predX.addEventListener('input', function () { x0 = parseFloat(predX.value); render(); });
-
-  document.getElementById('boxes').addEventListener('change', function (e) { showBoxes = e.target.checked; render(); });
-  document.getElementById('reset').addEventListener('click', function () {
-    pts = orig.map(function (r) { return { id: r.id, g: r.g, x: r.x, y: r.y }; });
+  $('predX').addEventListener('input', function (e) { x0 = parseFloat(e.target.value); render(); });
+  $('boxes').addEventListener('change', function (e) { showBoxes = e.target.checked; render(); });
+  $('reset').addEventListener('click', function () {
+    pts = pts.map(function (p, k) { return { i: p.i, id: p.id, g: p.g, x: orig[k].x, y: orig[k].y }; });
     render();
-  });
-  document.getElementById('dl').addEventListener('click', function () {
-    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
-    var rows = ['No,' + q(XL) + ',' + q(YL) + ',Gender'];
-    pts.forEach(function (p) { rows.push(p.id + ',' + p.x + ',' + p.y + ',' + (p.g || '')); });
-    var blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'data_diedit.csv';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    sendNow();
   });
 
-  render();
-})();
-</script>
-</body></html>
+  return {
+    update: function (cfg, sendFn) {
+      if (!cfg || !cfg.rows || !cfg.rows.length) return;
+      send = sendFn || send;
+      app.classList.toggle('dark', cfg.theme === 'dark');
+      XL = cfg.xl; YL = cfg.yl;
+      rows = cfg.rows.map(function (r) { return { i: r.i, id: r.id, g: r.g, x: r.x, y: r.y }; });
+      orig = cfg.orig.map(function (r) { return { x: r.x, y: r.y }; });
+      n = rows.length;
+      if (cfg.key !== curKey) {
+        curKey = cfg.key;
+        setDomain();
+        x0 = r2((AX.lo + AX.hi) / 2);
+        showBoxes = n <= 30;
+        $('boxes').checked = showBoxes;
+        pts = rows.map(function (r) { return { i: r.i, id: r.id, g: r.g, x: r.x, y: r.y }; });
+      } else if (drag === null && !timer) {
+        if (outside()) setDomain();
+        pts = rows.map(function (r) { return { i: r.i, id: r.id, g: r.g, x: r.x, y: r.y }; });
+      }
+      $('predX').value = x0;
+      render();
+    }
+  };
+}
 """
 
+DRAG_COMP = st.components.v2.component("drag_scatter", html=DRAG_HTML, css=DRAG_CSS, js=DRAG_JS)
 
-def drag_scatter(sub, xv, yv, height=760):
-    """Diagram sebar yang titiknya bisa diseret; r, garis regresi, dan kotak searah dihitung ulang di browser."""
+
+def drag_scatter(sub, orig_df, xv, yv):
+    """Diagram sebar dengan titik yang bisa diseret. Hasil seretan dikirim balik ke Python lewat trigger 'moved'."""
     try:
         theme = st.context.theme.type or "light"
     except Exception:
         theme = "light"
+    o = orig_df.reindex(sub.index)[[xv, yv]].fillna(sub[[xv, yv]])
     g = sub["Gender"].tolist() if "Gender" in sub else [""] * len(sub)
-    cfg = {"rows": [{"id": i + 1, "x": float(x), "y": float(y), "g": gg}
-                    for i, (x, y, gg) in enumerate(zip(sub[xv], sub[yv], g))],
-           "xl": L(xv), "yl": L(yv), "theme": theme}
-    payload = json.dumps(cfg, ensure_ascii=False).replace("</", "<\\/")
-    html = DRAG_HTML.replace("__CFG__", payload)
-    if hasattr(st, "iframe"):  # st.components.v1.html sudah usang
-        st.iframe(html, height=height)
-    else:
-        components.html(html, height=height, scrolling=True)
+    cfg = {
+        "key": f"{xv}|{yv}|{len(sub)}", "theme": theme, "xl": L(xv), "yl": L(yv),
+        "rows": [{"i": int(i), "id": int(i) + 1, "x": float(x), "y": float(y), "g": gg}
+                 for i, x, y, gg in zip(sub.index, sub[xv], sub[yv], g)],
+        "orig": [{"x": float(x), "y": float(y)} for x, y in zip(o[xv], o[yv])],
+    }
+    return DRAG_COMP(data=cfg, key=f"drag_{xv}_{yv}", on_moved_change=lambda: None)
+
+
+def apply_moves(df, moved, xv, yv):
+    """Terapkan hasil seretan ke data utama (idempoten), lalu jalankan ulang agar seluruh dashboard ikut berubah."""
+    if not moved:
+        return
+    new, changed = df.copy(), False
+    for p in moved.get("points", []):
+        i = p.get("i")
+        if i not in new.index:
+            continue
+        for col, val in ((xv, p["x"]), (yv, p["y"])):
+            if not pd.api.types.is_float_dtype(new[col]):
+                new[col] = new[col].astype(float)
+            if not np.isclose(new.at[i, col], val):
+                new.at[i, col] = val
+                changed = True
+    if changed:
+        st.session_state.base = new
+        st.session_state.ed_ver += 1
+        st.rerun()
 
 
 @st.cache_data
@@ -382,7 +443,33 @@ def read_csv(src):
 # ------------------------------------------------------------------ data & filter
 st.sidebar.header("Data dan filter")
 upload = st.sidebar.file_uploader("Ganti data (CSV)", type="csv")
-df = read_csv(upload) if upload else read_csv(DATA)
+orig_df = read_csv(upload) if upload else read_csv(DATA)
+src_id = f"{upload.name}:{upload.size}" if upload else "bawaan"
+if st.session_state.get("src_id") != src_id:  # sumber data berganti -> mulai dari data awal
+    st.session_state.src_id = src_id
+    st.session_state.base = orig_df.copy()
+    st.session_state.ed_ver = 0
+
+st.title("Kebiasaan mahasiswa dan nilai ujian")
+st.caption("Statistik deskriptif, hubungan dua variabel dengan prediksi, dan keputusan yang dapat diambil.")
+
+with st.expander("Ubah data (klik sel untuk mengedit)"):
+    base = st.session_state.base
+    cfg_cols = {"Gender": st.column_config.SelectboxColumn("Gender", options=["F", "M"], required=True)} if "Gender" in base else {}
+    locked = [c for c in base.columns if "id" in c.lower()]
+    df = st.data_editor(base, key=f"ed_{st.session_state.ed_ver}", num_rows="fixed", width="stretch",
+                        height=300, disabled=locked, column_config=cfg_cols)
+    n_diff = int((~((df == orig_df) | (df.isna() & orig_df.isna()))).to_numpy().sum())
+    b1, b2 = st.columns(2)
+    if b1.button("Kembalikan data awal", disabled=n_diff == 0):
+        st.session_state.base = orig_df.copy()
+        st.session_state.ed_ver += 1
+        st.rerun()
+    b2.download_button("Unduh data hasil edit (CSV)", df.to_csv(index=False).encode("utf-8"),
+                       "data_diedit.csv", "text/csv")
+    st.caption(f"{n_diff} sel berbeda dari data awal. Perubahan (lewat tabel ini atau dengan menyeret titik) berlaku untuk "
+               "seluruh dashboard selama sesi ini dan hilang bila halaman dimuat ulang. Unduh CSV untuk menyimpannya.")
+
 num_cols = [c for c in df.select_dtypes("number").columns if "id" not in c.lower()]
 has_g = "Gender" in df.columns
 d = df.copy()
@@ -391,13 +478,11 @@ if has_g:
                                   format_func=lambda g: {"F": "Perempuan (F)", "M": "Laki-laki (M)"}[g])
     d = d[d["Gender"].isin(pick)]
 if "Age" in df.columns and df["Age"].nunique() > 1:
-    lo, hi = int(df["Age"].min()), int(df["Age"].max())
+    lo, hi = int(np.floor(df["Age"].min())), int(np.ceil(df["Age"].max()))
     a1, a2 = st.sidebar.slider("Rentang usia", lo, hi, (lo, hi))
     d = d[(d["Age"] >= a1) & (d["Age"] <= a2)]
 st.sidebar.caption(f"{len(d)} dari {len(df)} baris dipakai.")
 
-st.title("Kebiasaan mahasiswa dan nilai ujian")
-st.caption("Statistik deskriptif, hubungan dua variabel dengan prediksi, dan keputusan yang dapat diambil.")
 if len(d) < 5 or len(num_cols) < 2:
     st.warning("Data terlalu sedikit atau kurang kolom numerik. Ubah filter atau data.")
     st.stop()
@@ -517,7 +602,9 @@ with tab3:
         st.caption("Seret untuk menggeser, scroll untuk zoom, klik dua kali untuk reset. Garis = regresi. Pita pekat = selang kepercayaan 95% rata-rata Y. Pita tipis = selang prediksi 95% untuk satu mahasiswa baru.")
 
         st.markdown("#### Seret titik, lihat korelasinya berubah")
-        drag_scatter(sub, xv, yv)
+        st.caption("Titik yang digeser langsung mengubah datanya, sehingga tabel, grafik lain, prediksi, dan keputusan ikut dihitung ulang.")
+        res = drag_scatter(sub, orig_df, xv, yv)
+        apply_moves(df, getattr(res, "moved", None), xv, yv)
 
         # prediksi
         st.markdown("#### Prediksi")
