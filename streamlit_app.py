@@ -3,6 +3,7 @@
 Jalankan:  streamlit run streamlit_app.py
 Data bawaan: data/latihan1.csv (bisa diganti lewat unggah CSV di sidebar).
 """
+import json
 from pathlib import Path
 
 import altair as alt
@@ -394,7 +395,10 @@ function create(app) {
 }
 """
 
-DRAG_COMP = st.components.v2.component("drag_scatter", html=DRAG_HTML, css=DRAG_CSS, js=DRAG_JS)
+try:
+    DRAG_COMP = st.components.v2.component("drag_scatter", html=DRAG_HTML, css=DRAG_CSS, js=DRAG_JS)
+except Exception:  # Streamlit lama: fitur seret dua arah dimatikan, sisanya tetap jalan
+    DRAG_COMP = None
 
 
 def drag_scatter(sub, orig_df, xv, yv):
@@ -433,6 +437,172 @@ def apply_moves(df, moved, xv, yv):
         st.session_state.base = new
         st.session_state.ed_ver += 1
         st.rerun()
+
+
+LAB_HTML = r"""<!doctype html>
+<html lang="id" data-theme="__THEME__"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ubah data, lihat korelasinya berubah</title>
+<style>
+:root{--bg:#eef1f6;--card:#fff;--ink:#172033;--mut:#5b6577;--line:#d5dbe4;--pos:#2f5da8;--f:#0c8f8f;--m:#d9772b;--neg:#b8442b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1522;--card:#172033;--ink:#e6eaf2;--mut:#9aa5b8;--line:#2b374d;--pos:#6f9bea;--f:#3cc0b8;--m:#f0a15a;--neg:#e5836b}}
+:root[data-theme="dark"]{--bg:#0f1522;--card:#172033;--ink:#e6eaf2;--mut:#9aa5b8;--line:#2b374d;--pos:#6f9bea;--f:#3cc0b8;--m:#f0a15a;--neg:#e5836b}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:0 0 12px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+.bar.dirty{border-color:var(--m)}
+.bar .msg{flex:1 1 240px;color:var(--mut);font-size:.9rem}
+.badge{border-radius:99px;padding:3px 12px;font-size:.84rem;font-weight:600;white-space:nowrap}
+.badge.w{background:color-mix(in srgb,var(--m) 22%,transparent);color:var(--m)}
+.badge.o{background:color-mix(in srgb,var(--f) 20%,transparent);color:var(--f)}
+button{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 14px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--ink)}button:disabled{opacity:.4;cursor:default}
+button.pri{background:var(--pos);border-color:var(--pos);color:#fff;font-weight:600}
+.grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:14px;align-items:start}
+@media(max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card h2{margin:0 0 8px;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+svg{width:100%;height:auto;display:block;touch-action:none;user-select:none}
+.g{stroke:var(--line)}.ax{fill:var(--mut);font-size:11px}.al{fill:var(--mut);font-size:12px;font-weight:600}
+.mn{stroke:var(--ink);stroke-width:1.4;stroke-dasharray:5 4;opacity:.8}.gd{stroke:var(--ink);stroke-dasharray:2 3;opacity:.7}
+.lb{fill:var(--ink);font-size:11.5px;font-weight:600}.reg{stroke:var(--ink);stroke-width:3;stroke-linecap:round}
+.bp{fill:var(--f);fill-opacity:.14}.bn{fill:var(--m);fill-opacity:.18}
+.pt{fill:var(--pos);stroke:#fff;stroke-width:1.5;cursor:grab}.pt:hover{stroke-width:3}
+.pt.a,.pt:focus-visible{stroke:var(--ink);stroke-width:3;outline:none;cursor:grabbing}
+.pn{fill:var(--ink);font-size:11px;pointer-events:none}.pr{fill:none;stroke:var(--ink);stroke-width:2.5}
+.lg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.84rem;color:var(--mut);margin-top:6px}
+.lg i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.hint{color:var(--mut);font-size:.86rem;margin:8px 0 0}
+.rb{font-size:2.8rem;font-weight:600;line-height:1.1}
+.gauge{position:relative;height:10px;border-radius:6px;margin-top:10px;background:linear-gradient(90deg,var(--neg),var(--line) 50%,var(--f))}
+.gauge span{position:absolute;top:-4px;width:4px;height:18px;background:var(--ink);border-radius:2px;transform:translateX(-2px)}
+.gl{display:flex;justify-content:space-between;color:var(--mut);font-size:.75rem;margin:6px 0 8px}
+dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin:12px 0 0}dl div{border-top:1px solid var(--line);padding-top:5px}
+dt{color:var(--mut);font-size:.78rem}dd{margin:0;font-weight:600}
+.pd{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.pd input{width:100%;accent-color:var(--pos)}
+.names{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.names label{font-size:.82rem;color:var(--mut);display:grid;gap:2px;flex:1 1 110px}
+input[type=text],input[type=number]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:4px 7px;width:100%}
+.tw{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--card);color:var(--mut);font-weight:600}td:first-child{color:var(--mut);width:34px}
+td button{padding:1px 8px;border-color:transparent;color:var(--mut)}
+.w2{color:var(--m)}
+</style></head>
+<body><main>
+<div class="bar" id="bar" role="status">
+  <span class="badge o" id="badge"></span><span class="msg" id="msg"></span>
+  <button class="pri" id="save">Unduh CSV</button><button id="undo">Kembalikan data awal</button>
+</div>
+<div class="grid">
+  <div>
+    <div class="card">
+      <svg id="svg" viewBox="0 0 640 440" role="group" aria-label="Diagram sebar, titik bisa diseret"></svg>
+      <div class="lg"><span><i style="background:var(--pos);border-radius:50%"></i>Satu titik = satu baris data</span>
+        <span><i style="background:var(--f);opacity:.6"></i>Kotak searah (+)</span><span><i style="background:var(--m);opacity:.7"></i>Kotak berlawanan (−)</span></div>
+      <label class="hint" style="display:block"><input type="checkbox" id="bx" checked> Tampilkan kotak searah/berlawanan</label>
+      <p class="hint">Seret titik di grafik, atau fokuskan titik lalu pakai tombol panah (Shift = langkah besar). Angka di tabel ikut berubah, dan sebaliknya.</p>
+    </div>
+  </div>
+  <div>
+    <div class="card"><h2>Korelasi (r)</h2>
+      <div class="rb" id="rb">–</div><div class="gauge"><span id="gm"></span></div>
+      <div class="gl"><span>−1</span><span>0</span><span>+1</span></div>
+      <p id="rt" style="margin:6px 0 0"></p><dl id="st"></dl>
+      <div class="pd"><label><span id="pl"></span><input type="range" id="px" aria-label="Nilai X untuk perkiraan"></label><p id="po" style="margin:6px 0 0"></p></div>
+    </div>
+    <div class="card"><h2>Tabel data (ketik untuk mengubah)</h2>
+      <div class="names"><label>Nama X<input type="text" id="xn"></label><label>Nama Y<input type="text" id="yn"></label></div>
+      <div class="tw"><table><thead><tr><th>No</th><th id="hx"></th><th id="hy"></th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+      <button id="add" style="margin-top:8px">+ Tambah baris</button>
+    </div>
+  </div>
+</div>
+</main>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},KEY='korelasi-interaktif-v1';
+var CFG=__CFG__,DEF={xn:CFG.xn,yn:CFG.yn,pts:CFG.pts};
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function load(){return clone(DEF)}
+var saved=load(),pts=clone(saved.pts),xn=saved.xn||'X',yn=saved.yn||'Y',drag=null,x0=null,AX,AY,dX=0,dY=0,timer=null;
+var W=640,H=440,M={l:58,r:20,t:30,b:48},PW=W-M.l-M.r,PH=H-M.t-M.b,svg=$('svg');
+function fm(v,d){if(d===undefined)d=2;return(v==null||!isFinite(v))?'–':v.toLocaleString('id-ID',{minimumFractionDigits:d,maximumFractionDigits:d})}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function cl(v,a,b){return Math.min(b,Math.max(a,v))}function r2(v){return Math.round(v*100)/100}
+function nice(lo,hi){if(hi-lo===0){lo-=1;hi+=1}var raw=(hi-lo)/6,mag=Math.pow(10,Math.floor(Math.log10(raw))),nr=raw/mag,step=(nr<1.5?1:nr<3?2:nr<7?5:10)*mag,a=Math.floor(lo/step+1e-9)*step,b=Math.ceil(hi/step-1e-9)*step,t=[];for(var v=a;v<=b+step/2;v+=step)t.push(Math.round(v/step)*step);return{lo:a,hi:b,ticks:t,step:step}}
+function span(k){var v=pts.map(function(p){return p[k]}),lo=Math.min.apply(null,v),hi=Math.max.apply(null,v),pad=(hi-lo)*.1||1;return nice(lo>=0?0:lo-pad,hi+pad)}
+function dec(s){return s>=1?0:Math.min(4,Math.ceil(-Math.log10(s)))}
+function sx(x){return M.l+(x-AX.lo)/(AX.hi-AX.lo)*PW}function sy(y){return M.t+PH-(y-AY.lo)/(AY.hi-AY.lo)*PH}
+function calc(){var n=pts.length,mx=0,my=0,i;for(i=0;i<n;i++){mx+=pts[i].x;my+=pts[i].y}mx/=n;my/=n;var sxx=0,syy=0,sxy=0;for(i=0;i<n;i++){var a=pts[i].x-mx,b=pts[i].y-my;sxx+=a*a;syy+=b*b;sxy+=a*b}var b1=sxx>0?sxy/sxx:NaN;return{n:n,mx:mx,my:my,b:b1,a:my-b1*mx,r:(sxx>0&&syy>0)?sxy/Math.sqrt(sxx*syy):NaN,cov:n>1?sxy/(n-1):NaN}}
+function chart(S){
+  var h='<defs><clipPath id="cp"><rect x="'+M.l+'" y="'+M.t+'" width="'+PW+'" height="'+PH+'"/></clipPath></defs>',i;
+  AX.ticks.forEach(function(t){var x=sx(t);h+='<line class="g" x1="'+x+'" x2="'+x+'" y1="'+M.t+'" y2="'+(M.t+PH)+'"/><text class="ax" x="'+x+'" y="'+(M.t+PH+16)+'" text-anchor="middle">'+fm(t,dX)+'</text>'});
+  AY.ticks.forEach(function(t){var y=sy(t);h+='<line class="g" x1="'+M.l+'" x2="'+(M.l+PW)+'" y1="'+y+'" y2="'+y+'"/><text class="ax" x="'+(M.l-8)+'" y="'+(y+4)+'" text-anchor="end">'+fm(t,dY)+'</text>'});
+  h+='<text class="al" x="'+(M.l+PW/2)+'" y="'+(H-8)+'" text-anchor="middle">'+esc(xn)+' (X)</text><text class="al" transform="translate(14 '+(M.t+PH/2)+') rotate(-90)" text-anchor="middle">'+esc(yn)+' (Y)</text><g clip-path="url(#cp)">';
+  if($('bx').checked)for(i=0;i<S.n;i++){var p=pts[i],xa=sx(Math.min(p.x,S.mx)),xb=sx(Math.max(p.x,S.mx)),ya=sy(Math.max(p.y,S.my)),yb=sy(Math.min(p.y,S.my));h+='<rect class="'+((p.x-S.mx)*(p.y-S.my)>=0?'bp':'bn')+'" x="'+xa+'" y="'+ya+'" width="'+(xb-xa)+'" height="'+(yb-ya)+'"/>'}
+  h+='<line class="mn" x1="'+sx(S.mx)+'" x2="'+sx(S.mx)+'" y1="'+M.t+'" y2="'+(M.t+PH)+'"/><line class="mn" x1="'+M.l+'" x2="'+(M.l+PW)+'" y1="'+sy(S.my)+'" y2="'+sy(S.my)+'"/>';
+  if(isFinite(S.b))h+='<line class="reg" x1="'+sx(AX.lo)+'" y1="'+sy(S.a+S.b*AX.lo)+'" x2="'+sx(AX.hi)+'" y2="'+sy(S.a+S.b*AX.hi)+'"/>';
+  h+='</g><text class="lb" x="'+cl(sx(S.mx),M.l+24,M.l+PW-24)+'" y="'+(M.t-8)+'" text-anchor="middle">X̄ = '+fm(S.mx,1)+'</text><text class="lb" x="'+(M.l+PW-4)+'" y="'+(sy(S.my)-6)+'" text-anchor="end">Ȳ = '+fm(S.my,1)+'</text>';
+  if(isFinite(S.b)){h+='<text class="lb" x="'+(M.l+8)+'" y="'+(M.t+16)+'" style="font-weight:400">ŷ = '+fm(S.a)+(S.b>=0?' + ':' − ')+fm(Math.abs(S.b))+'·X</text>';var y0=S.a+S.b*x0;if(y0>=AY.lo&&y0<=AY.hi)h+='<line class="gd" x1="'+M.l+'" x2="'+sx(x0)+'" y1="'+sy(y0)+'" y2="'+sy(y0)+'"/><line class="gd" x1="'+sx(x0)+'" x2="'+sx(x0)+'" y1="'+sy(y0)+'" y2="'+(M.t+PH)+'"/><circle class="pr" cx="'+sx(x0)+'" cy="'+sy(y0)+'" r="7"/>'}
+  for(i=0;i<S.n;i++){var q=pts[i];h+='<circle class="pt'+(drag===i?' a':'')+'" data-i="'+i+'" cx="'+sx(q.x)+'" cy="'+sy(q.y)+'" r="'+(drag===i?8:6.5)+'" tabindex="0" role="button" aria-label="Titik '+(i+1)+': X '+fm(q.x)+', Y '+fm(q.y)+'. Tombol panah mengubah nilai."><title>Titik '+(i+1)+': X = '+fm(q.x)+', Y = '+fm(q.y)+'</title></circle><text class="pn" x="'+(sx(q.x)+9)+'" y="'+(sy(q.y)-8)+'">'+(i+1)+'</text>'}
+  svg.innerHTML=h}
+function strength(a){return a>=.8?'sangat kuat':a>=.6?'kuat':a>=.4?'sedang':a>=.2?'lemah':'sangat lemah'}
+function panel(S){var r=S.r;$('rb').textContent=fm(r);$('gm').style.left=(isFinite(r)?(r+1)/2*100:50)+'%';
+  $('rt').textContent=!isFinite(r)?'Belum bisa dihitung: semua nilai X atau semua nilai Y sama.':Math.abs(r)<.2?'Hampir tidak ada hubungan garis lurus antara X dan Y.':'Hubungan '+strength(Math.abs(r))+' dan '+(r>0?'naik: X yang lebih besar cenderung bersama Y yang lebih besar.':'turun: X yang lebih besar cenderung bersama Y yang lebih kecil.')+' Sekitar '+Math.round(r*r*100)+'% variasi Y ikut dijelaskan X.';
+  $('st').innerHTML=[['Jumlah data (n)',S.n],['r²',fm(r*r)],['Rata-rata X',fm(S.mx)],['Rata-rata Y',fm(S.my)],['Kemiringan (b)',fm(S.b)],['Intersep (a)',fm(S.a)]].map(function(a){return'<div><dt>'+a[0]+'</dt><dd>'+a[1]+'</dd></div>'}).join('');
+  var px=$('px');px.min=AX.lo;px.max=AX.hi;px.step=(AX.hi-AX.lo)/200;px.value=x0;
+  $('pl').innerHTML='Perkiraan '+esc(yn.toLowerCase())+' untuk X = <b>'+fm(x0,dX)+'</b>';var y0=S.a+S.b*x0;
+  $('po').innerHTML=isFinite(y0)?esc(yn)+' diperkirakan <b>'+fm(y0,1)+'</b>.':'';
+  var d=Math.abs(pts.length-saved.pts.length);pts.forEach(function(p,i){var s=saved.pts[i];if(s&&(s.x!==p.x||s.y!==p.y))d++});
+  if(xn!==saved.xn||yn!==saved.yn)d=d||1;
+  var b=$('badge');$('bar').classList.toggle('dirty',d>0);b.className='badge '+(d>0?'w':'o');b.textContent=d>0?'● Data diubah':'● Sama dengan data awal';
+  $('msg').textContent=d>0?d+' baris berbeda dari data awal. Hitungan memakai data terbaru; unduh CSV untuk menyimpannya.':'Ubah angka di tabel atau seret titik di grafik; r, garis, dan kotak ikut berubah.';
+  $('undo').disabled=d===0}
+function render(){if(drag===null){AX=span('x');AY=span('y');dX=dec(AX.step);dY=dec(AY.step)}
+  var S=calc();if(x0===null||!isFinite(x0))x0=r2(S.mx);chart(S);panel(S)}
+function table(){$('hx').textContent=xn;$('hy').textContent=yn;
+  $('tb').innerHTML=pts.map(function(p,i){return'<tr><td>'+(i+1)+'</td><td><input type="number" step="any" data-i="'+i+'" data-k="x" value="'+p.x+'" aria-label="X baris '+(i+1)+'"></td><td><input type="number" step="any" data-i="'+i+'" data-k="y" value="'+p.y+'" aria-label="Y baris '+(i+1)+'"></td><td><button data-del="'+i+'" aria-label="Hapus baris '+(i+1)+'"'+(pts.length<=2?' disabled':'')+'>×</button></td></tr>'}).join('')}
+function syncRow(i){['x','y'].forEach(function(k){var e=$('tb').querySelector('[data-i="'+i+'"][data-k="'+k+'"]');if(e&&e!==document.activeElement)e.value=pts[i][k]})}
+function toData(e){var rc=svg.getBoundingClientRect(),px=(e.clientX-rc.left)*W/rc.width,py=(e.clientY-rc.top)*H/rc.height;return{x:r2(cl(AX.lo+(px-M.l)/PW*(AX.hi-AX.lo),AX.lo,AX.hi)),y:r2(cl(AY.lo+(M.t+PH-py)/PH*(AY.hi-AY.lo),AY.lo,AY.hi))}}
+svg.addEventListener('pointerdown',function(e){var c=e.target.closest('[data-i]');if(!c)return;drag=+c.getAttribute('data-i');if(svg.setPointerCapture)svg.setPointerCapture(e.pointerId);e.preventDefault();render()});
+svg.addEventListener('pointermove',function(e){if(drag===null)return;var p=toData(e);pts[drag].x=p.x;pts[drag].y=p.y;syncRow(drag);render()});
+function end(){if(drag!==null){drag=null;render()}}svg.addEventListener('pointerup',end);svg.addEventListener('pointercancel',end);
+svg.addEventListener('keydown',function(e){var c=e.target.closest('[data-i]');if(!c)return;var i=+c.getAttribute('data-i'),k=e.shiftKey?10:1,sxs=(AX.hi-AX.lo)/100*k,sys=(AY.hi-AY.lo)/100*k,p=pts[i];
+  if(e.key==='ArrowLeft')p.x=r2(cl(p.x-sxs,AX.lo,AX.hi));else if(e.key==='ArrowRight')p.x=r2(cl(p.x+sxs,AX.lo,AX.hi));else if(e.key==='ArrowUp')p.y=r2(cl(p.y+sys,AY.lo,AY.hi));else if(e.key==='ArrowDown')p.y=r2(cl(p.y-sys,AY.lo,AY.hi));else return;
+  e.preventDefault();syncRow(i);render();var el=svg.querySelector('[data-i="'+i+'"]');if(el)el.focus({preventScroll:true})});
+$('tb').addEventListener('input',function(e){var t=e.target;if(!t.dataset||!t.dataset.k)return;var v=parseFloat(t.value);if(!isFinite(v))return;pts[+t.dataset.i][t.dataset.k]=v;render()});
+$('tb').addEventListener('click',function(e){var t=e.target.closest('[data-del]');if(!t||pts.length<=2)return;pts.splice(+t.getAttribute('data-del'),1);table();render()});
+$('add').addEventListener('click',function(){var S=calc();pts.push({x:r2(S.mx),y:r2(S.my)});table();render()});
+$('px').addEventListener('input',function(e){x0=parseFloat(e.target.value);render()});$('bx').addEventListener('change',render);
+$('xn').value=xn;$('yn').value=yn;
+$('xn').addEventListener('input',function(e){xn=e.target.value||'X';$('hx').textContent=xn;render()});$('yn').addEventListener('input',function(e){yn=e.target.value||'Y';$('hy').textContent=yn;render()});
+$('save').addEventListener('click',function(){var q=function(t){return '"'+String(t).replace(/"/g,'""')+'"'},rows=['No,'+q(xn)+','+q(yn)];pts.forEach(function(p,i){rows.push((i+1)+','+p.x+','+p.y)});var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.join('
+')],{type:'text/csv;charset=utf-8'}));a.download='data_diedit.csv';document.body.appendChild(a);a.click();document.body.removeChild(a)});
+$('undo').addEventListener('click',function(){pts=clone(saved.pts);xn=saved.xn;yn=saved.yn;$('xn').value=xn;$('yn').value=yn;table();render()});
+table();render();
+})();
+</script></body></html>
+"""
+
+
+def lab(pair, xv, yv, height=900):
+    """Tabel + grafik yang saling terhubung (ketik angka atau seret titik), seluruhnya berjalan di browser."""
+    try:
+        theme = st.context.theme.type or "light"
+    except Exception:
+        theme = "light"
+    cfg = {"xn": L(xv), "yn": L(yv),
+           "pts": [{"x": float(x), "y": float(y)} for x, y in zip(pair[xv], pair[yv])]}
+    html = (LAB_HTML.replace("__CFG__", json.dumps(cfg, ensure_ascii=False).replace("</", "<\\/"))
+            .replace("__THEME__", theme)
+            .replace('id="bx" checked', 'id="bx"' + (" checked" if len(pair) <= 30 else "")))
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=height)
+    else:
+        import streamlit.components.v1 as components
+        components.html(html, height=height, scrolling=True)
 
 
 @st.cache_data
@@ -487,8 +657,20 @@ if len(d) < 5 or len(num_cols) < 2:
     st.warning("Data terlalu sedikit atau kurang kolom numerik. Ubah filter atau data.")
     st.stop()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["Ringkasan", "Distribusi", "Dua variabel + prediksi", "Korelasi dan perbandingan", "Keputusan"])
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["Lab interaktif", "Ringkasan", "Distribusi", "Dua variabel + prediksi", "Korelasi dan perbandingan", "Keputusan"])
+
+# ------------------------------------------------------------------ 0. lab interaktif
+with tab0:
+    st.subheader("Ubah data, lihat korelasinya berubah")
+    st.caption("Ketik angka di tabel atau seret titik di grafik. Garis regresi, r, dan kotak searah/berlawanan langsung ikut berubah.")
+    c1, c2 = st.columns(2)
+    lx = c1.selectbox("Variabel X", num_cols, index=num_cols.index("Study_Hours") if "Study_Hours" in num_cols else 0, format_func=L, key="lab_x")
+    ly = c2.selectbox("Variabel Y", num_cols, index=num_cols.index("Exam_Score") if "Exam_Score" in num_cols else 1, format_func=L, key="lab_y")
+    if lx == ly:
+        st.warning("Pilih dua variabel yang berbeda.")
+    else:
+        lab(d[[lx, ly]].dropna(), lx, ly)
 
 # ------------------------------------------------------------------ 1. ringkasan
 with tab1:
@@ -586,8 +768,11 @@ with tab3:
 
         st.markdown("#### Grafik yang bisa digeser: seret titik biru, garis ikut bergeser")
         st.caption("Titik yang digeser langsung mengubah datanya, sehingga tabel, grafik lain, prediksi, dan keputusan ikut dihitung ulang.")
-        res = drag_scatter(sub, orig_df, xv, yv)
-        apply_moves(df, getattr(res, "moved", None), xv, yv)
+        if DRAG_COMP is None:
+            st.info("Versi Streamlit di server terlalu lama untuk seret titik dua arah. Pakai tab \"Lab interaktif\".")
+        else:
+            res = drag_scatter(sub, orig_df, xv, yv)
+            apply_moves(df, getattr(res, "moved", None), xv, yv)
 
         # grafik dengan pita prediksi (hanya zoom/geser tampilan)
         with st.expander("Grafik dengan pita prediksi (hanya bisa di-zoom, titiknya tidak bisa digeser)"):
