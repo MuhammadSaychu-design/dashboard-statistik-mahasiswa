@@ -721,6 +721,26 @@ elif st.session_state.halaman == "dashboard":
                         st.caption(
                             "Jika arah pola sama di kedua kelompok, hubungannya tidak sekadar akibat perbedaan jenis kelamin."
                         )
+        # --- TAMBAHAN UNTUK POIN 4: MULTIPLE LINEAR REGRESSION ---
+    st.markdown("---")
+    st.subheader("4. Multiple Linear Regression (Regresi Berganda)")
+    st.write("Memprediksi Nilai Ujian berdasarkan Jam Belajar, Jam Tidur, dan Kehadiran secara bersamaan.")
+    
+    target_cols = ["Study_Hours", "Sleep_Hours", "Attendance"]
+    if all(col in d.columns for col in target_cols) and "Exam_Score" in d.columns:
+        X_multi = d[target_cols].dropna()
+        Y_multi = d.loc[X_multi.index, "Exam_Score"].to_numpy()
+        X_mat = np.column_stack((np.ones(len(X_multi)), X_multi.to_numpy()))
+        
+        try:
+            beta = np.linalg.inv(X_mat.T @ X_mat) @ X_mat.T @ Y_multi
+            st.write(f"**Persamaan Regresi Berganda yang didapat:**")
+            st.code(f"ŷ = {fm(beta[0])} + ({fm(beta[1])} * Jam Belajar) + ({fm(beta[2])} * Jam Tidur) + ({fm(beta[3])} * Kehadiran)")
+            st.caption("Nilai kemiringan (koefisien) positif menunjukkan bahwa variabel tersebut berkontribusi meningkatkan perkiraan nilai ujian secara simultan.")
+        except np.linalg.LinAlgError:
+            st.warning("Data tidak cukup bervariasi untuk menghitung regresi berganda.")
+    else:
+        st.info("Kolom bawaan (Study_Hours, Sleep_Hours, Attendance, Exam_Score) tidak ditemukan untuk analisis regresi berganda.")
 
     # ------------------------------------------------------------------ 4. korelasi & perbandingan
     with tab4:
