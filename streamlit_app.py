@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from scipy import stats
+import plotly.graph_objects as go
 
 DATA = Path(__file__).parent / "data" / "latihan1.csv"
 LABEL = {
@@ -21,7 +22,7 @@ LABEL = {
 GCOL = alt.Scale(domain=["F", "M"], range=["#0c8f8f", "#d9772b"])
 UP, DOWN, FLAT = "#2f5da8", "#b8442b", "#6b7385"
 
-
+st.set_page_config(page_title="Dashboard Statistika", layout="wide")
 @st.cache_data
 def read_csv(src):
     return pd.read_csv(src)
@@ -64,21 +65,6 @@ if st.session_state.halaman == "pembuka":
 
     # Wadah data yang akan difilter (Gunakan 4 spasi masuk ke kanan)
     d = orig_df.copy()
-
-    # Menampilkan filter langsung di halaman utama pembuka
-    if has_g:
-        pick = st.multiselect(
-            "Jenis kelamin",
-            ["F", "M"],
-            default=["F", "M"],
-            format_func=lambda g: {"F": "Perempuan (F)", "M": "Laki-laki (M)"}[g],
-        )
-        d = d[d["Gender"].isin(pick)]
-
-    if "Age" in orig_df.columns and orig_df["Age"].nunique() > 1:
-        lo, hi = int(np.floor(orig_df["Age"].min())), int(np.ceil(orig_df["Age"].max()))
-        a1, a2 = st.slider("Rentang usia", lo, hi, (lo, hi))
-        d = d[(d["Age"] >= a1) & (d["Age"] <= a2)]
 
     # Simpan hasil filter ke session_state agar bisa terbaca di halaman kedua
     st.session_state.data_terfilter = d
@@ -726,7 +712,7 @@ elif st.session_state.halaman == "dashboard":
     st.subheader("4. Multiple Linear Regression (Regresi Berganda)")
     st.write("Memprediksi Nilai Ujian berdasarkan Jam Belajar, Jam Tidur, dan Kehadiran secara bersamaan.")
     
-    target_cols = ["Study_Hours", "Sleep_Hours", "Attendance"]
+    target_cols = [k for k in LABEL if k in d.columns and k != "Exam_Score"]
     if all(col in d.columns for col in target_cols) and "Exam_Score" in d.columns:
         X_multi = d[target_cols].dropna()
         Y_multi = d.loc[X_multi.index, "Exam_Score"].to_numpy()
@@ -735,7 +721,8 @@ elif st.session_state.halaman == "dashboard":
         try:
             beta = np.linalg.inv(X_mat.T @ X_mat) @ X_mat.T @ Y_multi
             st.write(f"**Persamaan Regresi Berganda yang didapat:**")
-            st.code(f"ŷ = {fm(beta[0])} + ({fm(beta[1])} * Jam Belajar) + ({fm(beta[2])} * Jam Tidur) + ({fm(beta[3])} * Kehadiran)")
+            suku = "\n  + ".join(f"({fm(beta[i + 1])} * {LABEL[k]})" for i, k in enumerate(target_cols))
+            st.code(f"ŷ = {fm(beta[0])}\n  + {suku}")
             st.caption("Nilai kemiringan (koefisien) positif menunjukkan bahwa variabel tersebut berkontribusi meningkatkan perkiraan nilai ujian secara simultan.")
         except np.linalg.LinAlgError:
             st.warning("Data tidak cukup bervariasi untuk menghitung regresi berganda.")
@@ -869,3 +856,148 @@ elif st.session_state.halaman == "dashboard":
     """,
         unsafe_allow_html=True,
     )
+    # =====================================================================
+    # PLOT 3D DAN BIDANG REGRESI  (editor data di kiri, plot di kanan)
+    # Tempel mulai dari sini, GANTI semua kode lama dari
+    # st.subheader("Plot 3D dan Bidang Regresi") sampai akhir file.
+    # Indentasi 4 spasi, sama seperti kode lamamu (di dalam elif dashboard).
+    # =====================================================================
+    st.markdown("---")
+    st.subheader("Plot 3D dan Bidang Regresi")
+
+    def nm(k):
+        """Nama tampil: pakai LABEL kalau ada, kalau tidak pakai nama kolom asli."""
+        return LABEL.get(k, k)
+
+    def is_id(c):
+        c = c.lower()
+        return c == "id" or c.endswith("_id") or c.startswith("id_") or c == "no"
+
+    id_cols = [c for c in d.columns if is_id(c)]
+    # Kolom ID TIDAK ikut jadi pilihan variabel
+    kolom_num = [c for c in d.select_dtypes("number").columns if not is_id(c)]
+
+    if len(kolom_num) < 4:
+        st.info("Plot 3D membutuhkan minimal 4 kolom angka (1 variabel Y dan 3 variabel X).")
+    else:
+        kiri, kanan = st.columns([1, 1.3], gap="large")
+
+        # ---------------- KIRI: editor data ----------------
+        with kiri:
+            st.markdown("**Editor Data** (ubah angka untuk update otomatis)")
+            st.caption(
+                "Klik sel lalu ketik angka baru. Grafik, persamaan, dan R² di kanan "
+                "langsung ikut berubah. Perubahan di sini hanya berlaku untuk bagian 3D ini."
+            )
+            sumber = d[id_cols + kolom_num].reset_index(drop=True)
+            edit = st.data_editor(
+                sumber,
+                key=f"ed3d_{len(d)}_{st.session_state.ed_ver}",
+                num_rows="fixed",
+                height=470,
+                width="stretch",
+                disabled=id_cols,
+            )
+
+        # ---------------- KANAN: pilihan variabel + plot ----------------
+        with kanan:
+            st.markdown("**Visualisasi & Scatter Plot**")
+
+            def idx(opsi, pref):
+                return opsi.index(pref) if pref in opsi else 0
+
+            c1, c2 = st.columns(2)
+            kol_y = c1.selectbox(
+                "Variabel Y (yang diprediksi)", kolom_num,
+                index=idx(kolom_num, "Exam_Score"), format_func=nm, key="r_y",
+            )
+            opsi1 = [k for k in kolom_num if k != kol_y]
+            x1 = c2.selectbox(
+                "Variabel X1 (sumbu X)", opsi1,
+                index=idx(opsi1, "Study_Hours"), format_func=nm, key="r_x1",
+            )
+            c3, c4 = st.columns(2)
+            opsi2 = [k for k in opsi1 if k != x1]
+            x2 = c3.selectbox(
+                "Variabel X2 (sumbu Y)", opsi2,
+                index=idx(opsi2, "Sleep_Hours"), format_func=nm, key="r_x2",
+            )
+            opsi3 = [k for k in opsi2 if k != x2]
+            x3 = c4.selectbox(
+                "Variabel X3 (ditahan tetap)", opsi3,
+                index=idx(opsi3, "Attendance"), format_func=nm, key="r_x3",
+            )
+
+            # Data HASIL EDIT dipakai untuk regresi
+            data3 = (
+                edit[[x1, x2, x3, kol_y]]
+                .apply(pd.to_numeric, errors="coerce")
+                .dropna()
+            )
+
+            if len(data3) < 5:
+                st.warning("Data valid kurang dari 5 baris, regresi belum bisa dihitung.")
+            else:
+                X1 = data3[x1].to_numpy(float)
+                X2 = data3[x2].to_numpy(float)
+                X3 = data3[x3].to_numpy(float)
+                Y = data3[kol_y].to_numpy(float)
+
+                # Regresi berganda: Y = b0 + b1*X1 + b2*X2 + b3*X3
+                A = np.column_stack([np.ones(len(Y)), X1, X2, X3])
+                b0, b1, b2, b3 = np.linalg.lstsq(A, Y, rcond=None)[0]
+                pred = A @ np.array([b0, b1, b2, b3])
+                ss_tot = np.sum((Y - Y.mean()) ** 2)
+                r2_3d = 1 - np.sum((Y - pred) ** 2) / ss_tot if ss_tot > 0 else float("nan")
+
+                if X3.min() == X3.max():
+                    x3_tetap = float(X3.min())
+                    st.caption(f"{nm(x3)} bernilai konstan ({fm(x3_tetap)}).")
+                else:
+                    x3_tetap = st.slider(
+                        f"Nilai {nm(x3)} untuk bidang",
+                        float(X3.min()), float(X3.max()), float(X3.mean()),
+                        key="r_x3_val",
+                    )
+
+                # Bidang regresi pada X3 = x3_tetap
+                g1 = np.linspace(X1.min(), X1.max(), 20)
+                g2 = np.linspace(X2.min(), X2.max(), 20)
+                G1, G2 = np.meshgrid(g1, g2)
+                GZ = b0 + b1 * G1 + b2 * G2 + b3 * x3_tetap
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter3d(
+                    x=X1, y=X2, z=Y, mode="markers", name="Data",
+                    marker=dict(size=4, opacity=0.85, color=X3, colorscale="Viridis",
+                                colorbar=dict(title=nm(x3), len=0.6)),
+                ))
+                fig.add_trace(go.Surface(
+                    x=G1, y=G2, z=GZ, opacity=0.55, colorscale="Blues",
+                    showscale=False, name="Bidang regresi",
+                ))
+                fig.update_layout(
+                    height=480,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    uirevision="plot3d",  # kamera tidak reset saat data diedit
+                    scene=dict(
+                        xaxis_title=nm(x1), yaxis_title=nm(x2), zaxis_title=nm(kol_y),
+                        aspectmode="cube",
+                        camera=dict(eye=dict(x=1.7, y=-1.7, z=0.9)),
+                    ),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+                def sg(v):  # tanda rapi, tanpa "+ -0,00"
+                    return f"{'+' if v >= 0 else '−'} {fm(abs(v))}"
+
+                st.markdown(
+                    f"**Persamaan:** {nm(kol_y)} = {fm(b0)} "
+                    f"{sg(b1)}·{nm(x1)} {sg(b2)}·{nm(x2)} {sg(b3)}·{nm(x3)}"
+                )
+                st.markdown(f"**R²:** {fm(r2_3d, 3)}")
+                st.caption(
+                    "Regresi berganda 3 variabel. Grafik 3D hanya punya 2 sumbu X, jadi "
+                    "variabel ketiga ditahan pada nilai slider. Warna titik menunjukkan "
+                    "nilai variabel ketiga."
+                )
